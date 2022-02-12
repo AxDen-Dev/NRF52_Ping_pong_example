@@ -1,8 +1,7 @@
 
 # NRF52832 Ping pong example
--------------------------
 
-# NRF52832 SDK Download
+### NRF52832 SDK Download
 <br>
 
 <img src="./asset/nordic_sdk_web.png">
@@ -13,18 +12,17 @@ Download [Nordic NRF52832 SDK](https://www.nordicsemi.com/Products/nRF52832/Down
 
 -------------------------
 
-# Note
+### Note
 <br>
 
 Works with SoftDevice S132 v7.2.0, provided with SDK 17.1.0.
-<br>
 <br>
 
 To compile it, clone the repository in the [SDK]/examples/ble_peripheral folder.
 
 -------------------------
 
-# Project import
+### Project import
 <br>
 
 <img src="./asset/import_setup_0.png">
@@ -40,7 +38,7 @@ File / New / Others / Make Project with Existing Code
 
 -------------------------
 
-# Eclipse setting
+### Eclipse setting
 <br>
 
 <img src="./asset/NRF52832_Eclipse_Setup_0.png">
