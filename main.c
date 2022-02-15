@@ -73,12 +73,13 @@
 #include "nrf_drv_ppi.h"
 #include "nrf_drv_gpiote.h"
 
-#define DEVICE_NAME                     "AxdenPingPong"                         /**< Name of device. Will be included in the advertising data. */
+#define DEVICE_NAME                     "PingPong"                         /**< Name of device. Will be included in the advertising data. */
 
 #define APP_BLE_OBSERVER_PRIO           3                                       /**< Application's BLE observer priority. You shouldn't need to modify this value. */
 #define APP_BLE_CONN_CFG_TAG            1                                       /**< A tag identifying the SoftDevice BLE configuration. */
 
-#define APP_ADV_INTERVAL                600                                      /**< The advertising interval (in units of 0.625 ms; this value corresponds to 40 ms). */
+#define APP_DATA_READY_ADV_INTERVAL                320                                      /**< The advertising interval (in units of 0.625 ms; this value corresponds to 40 ms). */
+#define APP_IDLE_ADV_INTERVAL                1280                                      /**< The advertising interval (in units of 0.625 ms; this value corresponds to 40 ms). */
 #define APP_ADV_DURATION                BLE_GAP_ADV_TIMEOUT_GENERAL_UNLIMITED   /**< The advertising time-out (in units of seconds). When set to 0, we will never time out. */
 
 #define MIN_CONN_INTERVAL               MSEC_TO_UNITS(100, UNIT_1_25_MS)        /**< Minimum acceptable connection interval (0.5 seconds). */
@@ -93,6 +94,8 @@
 #define APP_TIMER_DELAY          APP_TIMER_TICKS(100)
 
 #define DEAD_BEEF                       0xDEADBEEF                              /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
+
+#define DISCONNECT_TIMEOUT 30
 
 BLE_SERVICE_DEF(m_service);
 NRF_BLE_GATT_DEF(m_gatt); /**< GATT module instance. */
@@ -117,11 +120,15 @@ static uint8_t buffer_size = 0;
 static uint8_t buffer[20] = { 0x00 };
 
 static volatile uint8_t tx_complete_state = 0x01;
-static volatile uint8_t notify_enable_state = 0x00;
+static volatile uint8_t aggregator_notify_enable_state = 0x00;
+static volatile uint8_t stream_notify_enable_state = 0x00;
+static volatile uint16_t disconnect_timeout_count = 0;
+static volatile uint8_t request_disconnect = 0x00;
+static volatile uint8_t data_update_state = 0x00;
 
 static volatile uint8_t ble_input_event_state = 0x00;
 static uint8_t ble_input_write_buffer_size = 0;
-static uint8_t ble_input_write_buffer[20] = { 0x00 };
+static uint8_t ble_input_write_buffer[213] = { 0x00 };
 
 static uint8_t mac_address[8] = { 0x00 };
 
@@ -216,13 +223,12 @@ static void gatt_init(void) {
  * @details Encodes the required advertising data and passes it to the stack.
  *          Also builds a structure to be passed to the stack when starting advertising.
  */
-static void advertising_init(void) {
+static void advertising_init(uint8_t data_update_state) {
 
 	ret_code_t err_code;
 	ble_advdata_t advdata;
 	ble_advdata_t srdata;
-
-	ble_uuid_t adv_uuids[] = { { BLE_UUID_SERVICE, m_service.uuid_type } };
+	uint32_t interval = APP_IDLE_ADV_INTERVAL;
 
 	// Build and set advertising data.
 	memset(&advdata, 0, sizeof(advdata));
@@ -231,9 +237,31 @@ static void advertising_init(void) {
 	advdata.include_appearance = true;
 	advdata.flags = BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE;
 
-	memset(&srdata, 0, sizeof(srdata));
-	srdata.uuids_complete.uuid_cnt = sizeof(adv_uuids) / sizeof(adv_uuids[0]);
-	srdata.uuids_complete.p_uuids = adv_uuids;
+	if (data_update_state) {
+
+		ble_uuid_t adv_uuids[] = { { BLE_DATA_READY_UUID_SCAN_SERVICE,
+				m_service.uuid_type } };
+
+		memset(&srdata, 0, sizeof(srdata));
+		srdata.uuids_complete.uuid_cnt = sizeof(adv_uuids)
+				/ sizeof(adv_uuids[0]);
+		srdata.uuids_complete.p_uuids = adv_uuids;
+
+		interval = APP_DATA_READY_ADV_INTERVAL;
+
+	} else {
+
+		ble_uuid_t adv_uuids[] = { { BLE_IDLE_UUID_SCAN_SERVICE,
+				m_service.uuid_type } };
+
+		memset(&srdata, 0, sizeof(srdata));
+		srdata.uuids_complete.uuid_cnt = sizeof(adv_uuids)
+				/ sizeof(adv_uuids[0]);
+		srdata.uuids_complete.p_uuids = adv_uuids;
+
+		interval = APP_IDLE_ADV_INTERVAL;
+
+	}
 
 	err_code = ble_advdata_encode(&advdata, m_adv_data.adv_data.p_data,
 			&m_adv_data.adv_data.len);
@@ -254,7 +282,7 @@ static void advertising_init(void) {
 	BLE_GAP_ADV_TYPE_CONNECTABLE_SCANNABLE_UNDIRECTED;
 	adv_params.p_peer_addr = NULL;
 	adv_params.filter_policy = BLE_GAP_ADV_FP_ANY;
-	adv_params.interval = APP_ADV_INTERVAL;
+	adv_params.interval = interval;
 
 	err_code = sd_ble_gap_adv_set_configure(&m_adv_handle, &m_adv_data,
 			&adv_params);
@@ -278,25 +306,45 @@ static void nrf_qwr_error_handler(uint32_t nrf_error) {
 static void ble_service_tx_complete_handler(uint16_t conn_handle,
 		ble_service_t *p_service) {
 
-	tx_complete_state = 0x01;
-	NRF_LOG_INFO("TX complete");
+	if (aggregator_notify_enable_state) {
+
+		tx_complete_state = 0x02;
+
+	} else if (stream_notify_enable_state) {
+
+		tx_complete_state = 0x01;
+
+	}
+
+	NRF_LOG_INFO("TX complete %d", tx_complete_state);
 
 }
 
 static void ble_service_notify_state_event_handler(uint16_t conn_handle,
 		ble_service_t *p_service, uint8_t p_event_notify_char, uint8_t p_event) {
 
-	if (p_event_notify_char == BLE_DEVICE_CHAR) {
+	if (p_event_notify_char == BLE_AGGREGATOR_CHAR) {
 
-		notify_enable_state = p_event;
-		NRF_LOG_INFO("Notify enable %d", notify_enable_state);
+		aggregator_notify_enable_state = p_event;
+		stream_notify_enable_state = 0x00;
+
+		NRF_LOG_INFO("Notify aggregator enable %d",
+				aggregator_notify_enable_state);
+
+	} else if (p_event_notify_char == BLE_STREAM_CHAR) {
+
+		aggregator_notify_enable_state = 0x00;
+		stream_notify_enable_state = p_event;
+
+		NRF_LOG_INFO("Notify stream enable %d", stream_notify_enable_state);
 
 	}
 
 }
 
 static void ble_service_write_handler(uint16_t conn_handle,
-		ble_service_t *p_service, uint8_t const *buffer, uint8_t buffer_size) {
+		ble_service_t *p_service, uint8_t event_type, uint8_t const *buffer,
+		uint8_t buffer_size) {
 
 	if (buffer_size <= sizeof(ble_input_write_buffer)) {
 
@@ -307,7 +355,7 @@ static void ble_service_write_handler(uint16_t conn_handle,
 		memcpy(ble_input_write_buffer, buffer, buffer_size);
 		ble_input_event_state = 0x01;
 
-		NRF_LOG_INFO("BLE Input %s / %d", (char* )ble_input_write_buffer,
+		NRF_LOG_INFO("BLE Input %s / %d", (char* ) ble_input_write_buffer,
 				ble_input_write_buffer_size);
 
 	}
@@ -406,6 +454,12 @@ static void advertising_start(void) {
 
 }
 
+static void adversting_stop(void) {
+
+	sd_ble_gap_adv_stop(m_adv_handle);
+
+}
+
 /**@brief Function for handling BLE events.
  *
  * @param[in]   p_ble_evt   Bluetooth stack event.
@@ -420,7 +474,10 @@ static void ble_evt_handler(ble_evt_t const *p_ble_evt, void *p_context) {
 		;
 
 		tx_complete_state = 0x01;
-		notify_enable_state = 0x00;
+		aggregator_notify_enable_state = 0x00;
+		stream_notify_enable_state = 0x00;
+		disconnect_timeout_count = 0;
+		request_disconnect = 0x00;
 		m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
 
 		err_code = nrf_ble_qwr_conn_handle_assign(&m_qwr, m_conn_handle);
@@ -433,8 +490,15 @@ static void ble_evt_handler(ble_evt_t const *p_ble_evt, void *p_context) {
 		;
 
 		tx_complete_state = 0x01;
-		notify_enable_state = 0x00;
+		aggregator_notify_enable_state = 0x00;
+		stream_notify_enable_state = 0x00;
+		disconnect_timeout_count = 0;
+		request_disconnect = 0x00;
 		m_conn_handle = BLE_CONN_HANDLE_INVALID;
+
+		gap_params_init();
+
+		advertising_init(data_update_state);
 
 		advertising_start();
 
@@ -723,8 +787,8 @@ static void init_uart_2() {
 	uint32_t err_code;
 
 	const app_uart_comm_params_t comm_params = { .rx_pin_no = UART_1_RX_GPIO,
-			.tx_pin_no = UART_1_TX_GPIO,
-			UART_PIN_DISCONNECTED, UART_PIN_DISCONNECTED, .flow_control =
+			.tx_pin_no = UART_1_TX_GPIO, UART_PIN_DISCONNECTED,
+			UART_PIN_DISCONNECTED, .flow_control =
 					APP_UART_FLOW_CONTROL_DISABLED, .use_parity =
 			false, NRF_UART_BAUDRATE_9600 };
 
@@ -865,7 +929,7 @@ int main(void) {
 
 	services_init();
 
-	advertising_init();
+	advertising_init(data_update_state);
 
 	conn_params_init();
 
@@ -886,9 +950,12 @@ int main(void) {
 
 	radio_packet_protocol.Packet.company_id[0] = COMPANY_ID >> 8;
 	radio_packet_protocol.Packet.company_id[1] = COMPANY_ID;
+
 	radio_packet_protocol.Packet.device_id[0] = DEVICE_TYPE >> 8;
 	radio_packet_protocol.Packet.device_id[1] = DEVICE_TYPE;
+
 	memcpy(radio_packet_protocol.Packet.mac_address, mac_address, 8);
+
 	radio_packet_protocol.Packet.control_number = 0;
 
 	NRF_LOG_INFO("Start main loop");
@@ -907,40 +974,115 @@ int main(void) {
 
 		}
 
+		if (uart_eof) {
+
+			NRF_LOG_INFO("UART Input %s", (char* ) buffer);
+
+			radio_packet_protocol_size = PACKET_HEADER_SIZE;
+			radio_packet_protocol_size += buffer_size;
+
+			memset(radio_packet_protocol.Packet.payload, 0x00,
+					sizeof(radio_packet_protocol.Packet.payload));
+			memcpy(radio_packet_protocol.Packet.payload, buffer, buffer_size);
+
+			buffer_index = 0;
+			buffer_size = 0;
+			memset(buffer, 0x00, sizeof(buffer));
+
+			uart_eof = 0x00;
+
+			nrf_gpio_pin_toggle(GPIO_LED_2);
+
+			if (m_conn_handle == BLE_CONN_HANDLE_INVALID) {
+
+				if (data_update_state == 0x00) {
+
+					adversting_stop();
+
+					gap_params_init();
+
+					advertising_init(data_update_state);
+
+					advertising_start();
+
+				}
+
+			}
+
+			data_update_state = 0x01;
+
+		}
+
 		if (m_conn_handle != BLE_CONN_HANDLE_INVALID) {
 
-			if (notify_enable_state) {
+			if (aggregator_notify_enable_state) {
 
-				if (uart_eof) {
+				if (data_update_state) {
 
-					if (tx_complete_state) {
-
-						NRF_LOG_INFO("UART Input %s", (char* )buffer);
+					if (tx_complete_state == 0x01) {
 
 						tx_complete_state = 0x00;
 
-						radio_packet_protocol_size = PACKET_HEADER_SIZE;
-						radio_packet_protocol_size += buffer_size;
-						memcpy(radio_packet_protocol.Packet.payload, buffer,
-								buffer_size);
-
-						ble_service_send_notification(m_conn_handle, &m_service,
-								radio_packet_protocol.buffer,
+						ble_service_send_aggregator_notification(m_conn_handle,
+								&m_service, radio_packet_protocol.buffer,
 								radio_packet_protocol_size);
 
-						buffer_index = 0;
-						buffer_size = 0;
-						memset(buffer, 0x00, sizeof(buffer));
+						data_update_state = 0x00;
 
-						uart_eof = 0x00;
+						NRF_LOG_INFO("Aggregator notify send");
 
-						nrf_gpio_pin_toggle(GPIO_LED_2);
+					} else if (tx_complete_state == 0x02) {
+
+						disconnect_timeout_count = DISCONNECT_TIMEOUT;
 
 					}
 
 				}
 
+			} else if (stream_notify_enable_state) {
+
+				if (data_update_state) {
+
+					if (tx_complete_state) {
+
+						tx_complete_state = 0x00;
+
+						ble_service_send_stream_notification(m_conn_handle,
+								&m_service, radio_packet_protocol.buffer,
+								radio_packet_protocol_size);
+
+						data_update_state = 0x00;
+
+						NRF_LOG_INFO("Stream notify send");
+
+					}
+
+				}
+
+				disconnect_timeout_count = 0;
+
 			}
+
+			disconnect_timeout_count++;
+
+			if (disconnect_timeout_count > DISCONNECT_TIMEOUT) {
+
+				if (request_disconnect == 0x00) {
+
+					sd_ble_gap_disconnect(m_conn_handle,
+					BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
+
+					request_disconnect = 0x01;
+
+					NRF_LOG_INFO("Disconnect request");
+
+				}
+
+			}
+
+		} else {
+
+			disconnect_timeout_count = 0;
 
 		}
 
@@ -963,6 +1105,7 @@ int main(void) {
 		NRF_LOG_FLUSH();
 
 	}
+
 }
 
 /**

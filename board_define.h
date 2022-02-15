@@ -1,8 +1,8 @@
 #ifndef BOARD_DEFINE_H_
 #define BOARD_DEFINE_H_
 
-//#define NRF528XX
-#define NRF528XX_FEM
+#define NRF528XX
+//#define NRF528XX_FEM
 
 #ifdef NRF528XX
 
