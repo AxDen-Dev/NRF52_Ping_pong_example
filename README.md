@@ -1,6 +1,22 @@
 
 # NRF52832 Ping pong example
 
+-------------------------
+
+<img src="./asset/nrf52832.png">
+<br>
+
+NRF52832 와 Android Application 간의 통신 예제입니다.
+<br>
+
+BLE 통신을 사용합니다.
+<br>
+
+Android, iOS, Aggregator 와 통신이 가능합니다.
+<br>
+
+-------------------------
+
 ### NRF52832 SDK Download
 <br>
 
