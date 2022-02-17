@@ -995,17 +995,13 @@ int main(void) {
 
 			if (m_conn_handle == BLE_CONN_HANDLE_INVALID) {
 
-				if (data_update_state == 0x00) {
+				adversting_stop();
 
-					adversting_stop();
+				gap_params_init();
 
-					gap_params_init();
+				advertising_init(data_update_state);
 
-					advertising_init(data_update_state);
-
-					advertising_start();
-
-				}
+				advertising_start();
 
 			}
 

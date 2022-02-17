@@ -154,27 +154,47 @@ void ble_service_on_ble_evt(ble_evt_t const *p_ble_evt, void *p_context) {
 
 }
 
+static uint32_t device_model_number_char_add(ble_service_t *p_service,
+		const ble_service_init_t *p_service_init) {
+
+	unsigned char init_data[] = { "AA-MB-05" };
+
+	ble_add_char_params_t add_char_params;
+
+	memset(&add_char_params, 0, sizeof(add_char_params));
+	add_char_params.uuid = DEVICE_MODEL_NUMBER_UUID_CHAR;
+	add_char_params.init_len = 8;
+	add_char_params.max_len = 8;
+	add_char_params.char_props.read = 1;
+	add_char_params.p_init_value = init_data;
+	add_char_params.read_access = SEC_OPEN;
+
+	return characteristic_add(p_service->device_service_handle,
+			&add_char_params, &p_service->device_info_model_number_handles);
+
+}
+
 static uint32_t device_serial_number_char_add(ble_service_t *p_service,
 		const ble_service_init_t *p_service_init) {
 
-	unsigned char init_data[] = { "00000000" };
+	unsigned char init_data[] = { "0000000000000000" };
 
 	ble_add_char_params_t add_char_params;
 
 	memset(&add_char_params, 0, sizeof(add_char_params));
-	add_char_params.uuid = DEVICE_SERIAL_UUID_CHAR;
-	add_char_params.init_len = 9;
-	add_char_params.max_len = 9;
+	add_char_params.uuid = DEVICE_SERIAL_NUMBER_UUID_CHAR;
+	add_char_params.init_len = 16;
+	add_char_params.max_len = 16;
 	add_char_params.char_props.read = 1;
 	add_char_params.p_init_value = init_data;
 	add_char_params.read_access = SEC_OPEN;
 
 	return characteristic_add(p_service->device_service_handle,
-			&add_char_params, &p_service->device_info_serial_handles);
+			&add_char_params, &p_service->device_info_serial_number_handles);
 
 }
 
-static uint32_t device_hw_char_add(ble_service_t *p_service,
+static uint32_t device_hw_revision_char_add(ble_service_t *p_service,
 		const ble_service_init_t *p_service_init) {
 
 	unsigned char init_data[] = { "0.0.1" };
@@ -183,7 +203,7 @@ static uint32_t device_hw_char_add(ble_service_t *p_service,
 
 	memset(&add_char_params, 0, sizeof(add_char_params));
 
-	add_char_params.uuid = DEVICE_HW_UUID_CHAR;
+	add_char_params.uuid = DEVICE_HW_REVISION_UUID_CHAR;
 	add_char_params.init_len = 5;
 	add_char_params.max_len = 5;
 	add_char_params.char_props.read = 1;
@@ -191,11 +211,11 @@ static uint32_t device_hw_char_add(ble_service_t *p_service,
 	add_char_params.read_access = SEC_OPEN;
 
 	return characteristic_add(p_service->device_service_handle,
-			&add_char_params, &p_service->device_info_hw_handles);
+			&add_char_params, &p_service->device_info_hw_revision_handles);
 
 }
 
-static uint32_t device_sw_char_add(ble_service_t *p_service,
+static uint32_t device_sw_revision_char_add(ble_service_t *p_service,
 		const ble_service_init_t *p_service_init) {
 
 	unsigned char init_data[] = { "0.0.1" };
@@ -204,7 +224,7 @@ static uint32_t device_sw_char_add(ble_service_t *p_service,
 
 	memset(&add_char_params, 0, sizeof(add_char_params));
 
-	add_char_params.uuid = DEVICE_SW_UUID_CHAR;
+	add_char_params.uuid = DEVICE_SW_REVISION_UUID_CHAR;
 	add_char_params.init_len = 5;
 	add_char_params.max_len = 5;
 	add_char_params.char_props.read = 1;
@@ -212,7 +232,7 @@ static uint32_t device_sw_char_add(ble_service_t *p_service,
 	add_char_params.read_access = SEC_OPEN;
 
 	return characteristic_add(p_service->device_service_handle,
-			&add_char_params, &p_service->device_info_sw_handles);
+			&add_char_params, &p_service->device_info_sw_revision_handles);
 
 }
 
@@ -249,13 +269,16 @@ uint32_t ble_service_device_info_init(ble_service_t *p_service,
 			&p_service->device_info_service_handle);
 	VERIFY_SUCCESS(err_code);
 
+	err_code = device_model_number_char_add(p_service, p_service_init);
+	VERIFY_SUCCESS(err_code);
+
 	err_code = device_serial_number_char_add(p_service, p_service_init);
 	VERIFY_SUCCESS(err_code);
 
-	err_code = device_hw_char_add(p_service, p_service_init);
+	err_code = device_hw_revision_char_add(p_service, p_service_init);
 	VERIFY_SUCCESS(err_code);
 
-	err_code = device_sw_char_add(p_service, p_service_init);
+	err_code = device_sw_revision_char_add(p_service, p_service_init);
 	VERIFY_SUCCESS(err_code);
 
 	err_code = device_manufacturer_char_add(p_service, p_service_init);

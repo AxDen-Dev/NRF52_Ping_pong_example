@@ -60,9 +60,10 @@ NRF_SDH_BLE_OBSERVER(_name ## _obs,                                             
 		ble_service_on_ble_evt, &_name)
 
 #define DEVICE_INFO_UUID_SERVICE 0x180A
-#define DEVICE_SERIAL_UUID_CHAR 0x2A25
-#define DEVICE_HW_UUID_CHAR 0x2A27
-#define DEVICE_SW_UUID_CHAR 0x2A28
+#define DEVICE_MODEL_NUMBER_UUID_CHAR 0x2A24
+#define DEVICE_SERIAL_NUMBER_UUID_CHAR 0x2A25
+#define DEVICE_HW_REVISION_UUID_CHAR 0x2A27
+#define DEVICE_SW_REVISION_UUID_CHAR 0x2A28
 #define DEVCIE_MANUFACTURER_CHAR 0x2A29
 
 #define BLE_UUID_BASE        {0xBD, 0xE9, 0x6A, 0xF2, 0x08, 0x69, 0x11, 0xEC, \
@@ -106,9 +107,10 @@ typedef struct {
 struct ble_service_s {
 
 	uint16_t device_info_service_handle;
-	ble_gatts_char_handles_t device_info_serial_handles;
-	ble_gatts_char_handles_t device_info_hw_handles;
-	ble_gatts_char_handles_t device_info_sw_handles;
+	ble_gatts_char_handles_t device_info_model_number_handles;
+	ble_gatts_char_handles_t device_info_serial_number_handles;
+	ble_gatts_char_handles_t device_info_hw_revision_handles;
+	ble_gatts_char_handles_t device_info_sw_revision_handles;
 	ble_gatts_char_handles_t device_info_manufacturer_handles;
 
 	uint8_t uuid_type;
